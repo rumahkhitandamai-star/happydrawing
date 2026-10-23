@@ -1,0 +1,25 @@
+# Node modules
+node_modules/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+
+# CLASP credentials / secrets
+.clasprc.json
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+qc-test.spec.js
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
