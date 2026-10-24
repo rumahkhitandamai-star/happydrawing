@@ -604,6 +604,7 @@ function doGet(e) {
   return HtmlService.createTemplateFromFile('index')
     .evaluate()
     .setTitle(CONFIG.APP_NAME)
+    .setFaviconUrl('https://lh3.googleusercontent.com/d/' + CONFIG.LOGO_ID)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
 }
