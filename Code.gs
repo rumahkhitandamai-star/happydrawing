@@ -601,12 +601,23 @@ function ensurePengeluaranSheet_() {
 
 function doGet(e) {
   ensurePengeluaranSheet_();
-  return HtmlService.createTemplateFromFile('index')
+  var output = HtmlService.createTemplateFromFile('index')
     .evaluate()
     .setTitle(CONFIG.APP_NAME)
-    .setFaviconUrl('https://lh3.googleusercontent.com/d/' + CONFIG.LOGO_ID)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+
+  try {
+    output.setFaviconUrl('https://happydrawing.web.app/favicon.ico');
+  } catch (favErr) {
+    try {
+      output.setFaviconUrl('https://happydrawing.web.app/favicon.png');
+    } catch (favErr2) {
+      Logger.log('Favicon error: ' + favErr2.message);
+    }
+  }
+
+  return output;
 }
 
 function doPost(e) {
