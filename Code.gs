@@ -601,8 +601,7 @@ function ensurePengeluaranSheet_() {
 
 function doGet(e) {
   ensurePengeluaranSheet_();
-  var output = HtmlService.createTemplateFromFile('index')
-    .evaluate()
+  var output = HtmlService.createHtmlOutputFromFile('index')
     .setTitle(CONFIG.APP_NAME)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
@@ -624,14 +623,15 @@ function doPost(e) {
   try {
     const request = JSON.parse(e.postData.contents);
     const action = request.action;
-    const payload = request.payload;
+    let payload = request.payload !== undefined ? request.payload : {};
+    const args = Array.isArray(request.args) ? request.args : [];
 
     // Hoist token otorisasi agar dapat diteruskan ke setiap fungsi handler di bawah
-    const token = request.authToken || (payload && (payload.authToken || payload.__token || payload.token)) || '';
+    const token = request.authToken || (payload && (payload.authToken || payload.__token || payload.token)) || (args.length > 1 && typeof args[args.length - 1] === 'string' && args[args.length - 1].length > 15 ? args[args.length - 1] : '') || '';
 
     // Allowlist endpoint publik tanpa token otorisasi
     const PUBLIC_ACTIONS = [
-      'login', 'resetAndSendPassword', 'submitBiodataPendaftaran',
+      'login', 'processLogin', 'validateSession', 'logoutSession', 'resetAndSendPassword', 'submitBiodataPendaftaran',
       'getFormOptions', 'fetchFormOptions', 'fetchGaleriData', 'fetchJadwalLes'
     ];
 
@@ -690,14 +690,22 @@ function doPost(e) {
 
     switch (action) {
       case 'login':
-        response = processLogin(payload.email, payload.password);
+      case 'processLogin':
+        response = processLogin((payload && payload.email) || args[0], (payload && payload.password) || args[1]);
+        break;
+      case 'validateSession':
+        response = validateSession(token || (payload && (payload.token || payload.authToken)) || args[0] || (typeof payload === 'string' ? payload : ''));
+        break;
+      case 'logoutSession':
+        response = logoutSession(token || (payload && (payload.token || payload.authToken)) || args[0] || (typeof payload === 'string' ? payload : ''));
         break;
       case 'getDashboardStats':
-        response = fetchDashboardStats(token, payload && (payload.filterYear || payload.year), payload && (payload.filterMonth || payload.month));
+      case 'fetchDashboardStats':
+        response = fetchDashboardStats(token, (payload && (payload.filterYear || payload.year)) || args[1], (payload && (payload.filterMonth || payload.month)) || args[2]);
         break;
       case 'getDashboardOverview':
       case 'fetchDashboardOverview':
-        response = fetchDashboardOverview(token, payload && (payload.filterYear || payload.year), payload && (payload.filterMonth || payload.month));
+        response = fetchDashboardOverview(token, (payload && (payload.filterYear || payload.year)) || args[1], (payload && (payload.filterMonth || payload.month)) || args[2]);
         break;
       case 'getSiswaList':
       case 'fetchMasterSiswa':
@@ -708,53 +716,53 @@ function doPost(e) {
         response = fetchUsersAdmin(token);
         break;
       case 'softDeleteSiswa':
-        response = softDeleteSiswa(payload.idSiswa || payload.id || payload, token);
+        response = softDeleteSiswa((payload && (payload.idSiswa || payload.id)) ? (payload.idSiswa || payload.id) : (args[0] || payload), token);
         break;
       case 'reactivateSiswa':
-        response = reactivateSiswa(payload.idSiswa || payload.id || payload, token);
+        response = reactivateSiswa((payload && (payload.idSiswa || payload.id)) ? (payload.idSiswa || payload.id) : (args[0] || payload), token);
         break;
       case 'getFormOptions':
       case 'fetchFormOptions':
         response = fetchFormOptions();
         break;
       case 'submitBiodataPendaftaran':
-        response = submitBiodataPendaftaran(payload);
+        response = submitBiodataPendaftaran(payload || args[0]);
         break;
       case 'updateStatusPendaftaranDaftar':
-        response = updateStatusPendaftaranDaftar(payload.email, payload.statusBaru, token);
+        response = updateStatusPendaftaranDaftar((payload && payload.email) || args[0], (payload && payload.statusBaru) || args[1], token);
         break;
       case 'approvePendaftaranSiswa':
-        response = approvePendaftaranSiswa(payload.idSiswa || payload.idUser || payload, payload.verifikator, token);
+        response = approvePendaftaranSiswa((payload && (payload.idSiswa || payload.idUser)) ? (payload.idSiswa || payload.idUser) : (args[0] || payload), (payload && payload.verifikator) || args[1], token);
         break;
       case 'rejectPendaftaranSiswa':
-        response = rejectPendaftaranSiswa(payload.idSiswa || payload.idUser || payload, payload.verifikator, payload.alasan, token);
+        response = rejectPendaftaranSiswa((payload && (payload.idSiswa || payload.idUser)) ? (payload.idSiswa || payload.idUser) : (args[0] || payload), (payload && payload.verifikator) || args[1], (payload && payload.alasan) || args[2], token);
         break;
       case 'updateBiodataSiswa':
-        response = updateBiodataSiswa(payload);
+        response = updateBiodataSiswa(payload || args[0]);
         break;
       case 'fetchBiodataSiswa':
-        response = fetchBiodataSiswa(payload && (payload.idSiswa || payload.id) ? (payload.idSiswa || payload.id) : payload, token);
+        response = fetchBiodataSiswa((payload && (payload.idSiswa || payload.id)) ? (payload.idSiswa || payload.id) : (args[0] || payload), token);
         break;
       case 'updateAkunSiswa':
-        response = updateAkunSiswa(payload, token);
+        response = updateAkunSiswa(payload || args[0], token);
         break;
       case 'getInfoAkunSiswa':
-        response = getInfoAkunSiswa(payload, token);
+        response = getInfoAkunSiswa(payload || args[0], token);
         break;
       case 'resetAndSendPassword':
-        response = resetAndSendPassword(payload.email);
+        response = resetAndSendPassword((payload && payload.email) || args[0]);
         break;
       case 'fetchKeuanganSiswa':
-        response = fetchKeuanganSiswa(payload.idSiswa, token);
+        response = fetchKeuanganSiswa((payload && payload.idSiswa) ? payload.idSiswa : (args[0] || payload), token);
         break;
       case 'submitBuktiPembayaran':
-        response = submitBuktiPembayaran(payload, token);
+        response = submitBuktiPembayaran(payload || args[0], token);
         break;
       case 'fetchGaleriData':
         response = fetchGaleriData(token);
         break;
       case 'fetchTableData':
-        response = fetchTableData(payload && (payload.sheetName || payload.table) ? (payload.sheetName || payload.table) : payload, token);
+        response = fetchTableData((payload && (payload.sheetName || payload.table)) ? (payload.sheetName || payload.table) : (args[0] || payload), token);
         break;
       case 'resetNomorUrutDanIdSiswa':
         response = resetNomorUrutDanIdSiswa(token);
@@ -1940,7 +1948,9 @@ function processLogin(email, password) {
 }
 
 function approvePendaftaranSiswa(idSiswa, verifikator, authToken) {
+  const lock = LockService.getScriptLock();
   try {
+    lock.waitLock(10000);
     const auth = requireAuth_(authToken, ['ADMIN', 'SUPER_ADMIN']);
     if (!auth.authorized) return auth.error;
 
@@ -1974,6 +1984,8 @@ function approvePendaftaranSiswa(idSiswa, verifikator, authToken) {
     return sanitizeForRPC({ success: true, message: "Pendaftaran siswa ID " + idSiswa + " berhasil disetujui (Status: AKTIF)." });
   } catch (err) {
     return sanitizeForRPC({ success: false, message: "Gagal menyetujui pendaftaran: " + err.toString() });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
   }
 }
 
@@ -3064,7 +3076,9 @@ function cekDuplikatTagihan_(kData, kHeaders, idSiswa, jenis, periodeBulan, peri
 }
 
 function createTransaksiManual(payload, authToken) {
+  const lock = LockService.getScriptLock();
   try {
+    lock.waitLock(10000);
     const auth = requireAuth_(authToken, ['ADMIN', 'SUPER_ADMIN']);
     if (!auth.authorized) return auth.error;
 
@@ -3239,6 +3253,8 @@ function createTransaksiManual(payload, authToken) {
     });
   } catch (err) {
     return sanitizeForRPC({ success: false, message: "Gagal mencatat transaksi manual: " + err.toString() });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
   }
 }
 
@@ -3317,7 +3333,9 @@ function logLaporanAccess(action, authToken) {
 }
 
 function savePengeluaran(payload, authToken) {
+  const lock = LockService.getScriptLock();
   try {
+    lock.waitLock(10000);
     const token = authToken || (payload && (payload.__token || payload.token));
     const auth = requireAuth_(token, ['ADMIN', 'SUPER_ADMIN']);
     if (!auth.authorized) return auth.error;
@@ -3511,6 +3529,8 @@ function savePengeluaran(payload, authToken) {
     }
   } catch (err) {
     return sanitizeForRPC({ success: false, message: "Gagal menyimpan pengeluaran: " + err.toString() });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
   }
 }
 

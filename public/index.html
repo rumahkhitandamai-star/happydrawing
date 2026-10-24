@@ -81,6 +81,81 @@
             } catch(e) {}
         })();
     </script>
+
+    <!-- Universal Google Apps Script RPC Bridge for Firebase Hosting & Standalone -->
+    <script>
+        (function() {
+            if (typeof window.google === 'undefined') {
+                window.google = {};
+            }
+            if (!window.google.script) {
+                window.google.script = {};
+            }
+            if (!window.google.script.run) {
+                var GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyEsKdyMBJzJl2E15bOnkm5A7MYLcBB4xJePka1mz9icDHspmxw6gWu2e8jesl_8QLa/exec';
+
+                function createBridge(onSuccess, onFailure, userObj) {
+                    return new Proxy({}, {
+                        get: function(target, prop) {
+                            if (prop === 'withSuccessHandler') {
+                                return function(fn) { return createBridge(fn, onFailure, userObj); };
+                            }
+                            if (prop === 'withFailureHandler') {
+                                return function(fn) { return createBridge(onSuccess, fn, userObj); };
+                            }
+                            if (prop === 'withUserObject') {
+                                return function(obj) { return createBridge(onSuccess, onFailure, obj); };
+                            }
+
+                            return function() {
+                                var args = Array.prototype.slice.call(arguments);
+                                var payload = args[0] !== undefined ? args[0] : {};
+                                var token = '';
+
+                                if (args.length > 1 && typeof args[args.length - 1] === 'string' && args[args.length - 1].length > 15) {
+                                    token = args[args.length - 1];
+                                } else if (payload && typeof payload === 'object' && (payload.authToken || payload.token || payload.__token)) {
+                                    token = payload.authToken || payload.token || payload.__token;
+                                }
+
+                                var reqBody = {
+                                    action: prop,
+                                    payload: payload,
+                                    args: args,
+                                    authToken: token
+                                };
+
+                                fetch(GAS_ENDPOINT, {
+                                    method: 'POST',
+                                    redirect: 'follow',
+                                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                    body: JSON.stringify(reqBody)
+                                })
+                                .then(function(res) {
+                                    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
+                                    return res.json();
+                                })
+                                .then(function(data) {
+                                    if (typeof onSuccess === 'function') {
+                                        try { onSuccess(data, userObj); } catch(cbErr) { console.error(cbErr); }
+                                    }
+                                })
+                                .catch(function(err) {
+                                    if (typeof onFailure === 'function') {
+                                        try { onFailure(err, userObj); } catch(cbErr) { console.error(cbErr); }
+                                    } else {
+                                        console.error('API Error (' + prop + '):', err);
+                                    }
+                                });
+                            };
+                        }
+                    });
+                }
+
+                window.google.script.run = createBridge();
+            }
+        })();
+    </script>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
