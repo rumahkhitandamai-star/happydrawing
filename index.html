@@ -112,10 +112,31 @@
                                 var payload = args[0] !== undefined ? args[0] : {};
                                 var token = '';
 
-                                if (args.length > 1 && typeof args[args.length - 1] === 'string' && args[args.length - 1].length > 15) {
-                                    token = args[args.length - 1];
-                                } else if (payload && typeof payload === 'object' && (payload.authToken || payload.token || payload.__token)) {
-                                    token = payload.authToken || payload.token || payload.__token;
+                                // 1. Deteksi token dari semua argumen pemanggilan fungsi
+                                for (var a = 0; a < args.length; a++) {
+                                    if (typeof args[a] === 'string' && args[a].length >= 20 && args[a].length <= 64 && /^[a-fA-F0-9_-]+$/.test(args[a])) {
+                                        token = args[a];
+                                        break;
+                                    }
+                                }
+
+                                // 2. Jika belum ditemukan, periksa properti pada payload object
+                                if (!token && payload && typeof payload === 'object') {
+                                    token = payload.authToken || payload.token || payload.__token || '';
+                                }
+
+                                // 3. Fallback: ambil token aktif dari sesi browser (localStorage / sessionStorage)
+                                if (!token && prop !== 'login' && prop !== 'processLogin') {
+                                    try {
+                                        token = localStorage.getItem('hd_sims_token') || sessionStorage.getItem('hd_sims_token') || '';
+                                        if (!token) {
+                                            var uStr = localStorage.getItem('hd_sims_user') || sessionStorage.getItem('hd_sims_user');
+                                            if (uStr) {
+                                                var uObj = JSON.parse(uStr);
+                                                token = uObj.token || '';
+                                            }
+                                        }
+                                    } catch (stErr) {}
                                 }
 
                                 var reqBody = {
@@ -5935,9 +5956,9 @@
                         if (typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.validateSession === 'function') {
                             google.script.run
                                 .withSuccessHandler(function(res) {
-                                    if (!res || !res.success) {
+                                    if (res && (res.code === 'SESSION_EXPIRED' || res.code === 'ACCOUNT_DISABLED')) {
                                         self.handleSessionExpired();
-                                     } else if (res.user && self.currentUser) {
+                                    } else if (res && res.success && res.user && self.currentUser) {
                                          let changed = false;
                                          if (res.user.role && self.currentUser.role !== res.user.role) {
                                              self.currentUser.role = res.user.role;

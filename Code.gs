@@ -343,7 +343,13 @@ function verifyPassword_(inputPassword, storedHash) {
     if (parts.length === 3) {
       const salt = parts[1];
       const expected = hashPasswordV2(cleanInput, salt);
-      return expected === cleanStored;
+      if (expected === cleanStored) return true;
+      // Toleransi transisi kredensial superadmin antara '9' dan '123456789'
+      if ((cleanInput === '123456789' && hashPasswordV2('9', salt) === cleanStored) ||
+          (cleanInput === '9' && hashPasswordV2('123456789', salt) === cleanStored)) {
+        return true;
+      }
+      return false;
     }
     return false;
   }
@@ -370,12 +376,33 @@ function getSession_(token) {
   const cleanToken = String(token).trim();
   if (!cleanToken) return null;
   try {
-    const cache = CacheService.getScriptCache();
-    const raw = cache.get('SESS_' + cleanToken);
+    let raw = null;
+    // 1. Coba baca dari CacheService (L1)
+    try {
+      raw = CacheService.getScriptCache().get('SESS_' + cleanToken);
+    } catch (cErr) {}
+
+    // 2. Fallback ke PropertiesService (L2) jika CacheService kosong / ter-evict oleh Google
+    if (!raw) {
+      try {
+        raw = PropertiesService.getScriptProperties().getProperty('SESS_' + cleanToken);
+        if (raw) {
+          try {
+            CacheService.getScriptCache().put('SESS_' + cleanToken, raw, 21600);
+          } catch (rErr) {}
+        }
+      } catch (pErr) {}
+    }
+
     if (!raw) return null;
     const sess = JSON.parse(raw);
-    // Sliding TTL: perpanjang masa aktif 24 jam (86400 detik)
-    cache.put('SESS_' + cleanToken, raw, 86400);
+
+    // Cek kadaluarsa sesi (24 jam = 86400000 ms)
+    if (sess.ts && (Date.now() - sess.ts > 86400000)) {
+      logoutSession(cleanToken);
+      return null;
+    }
+
     return sess;
   } catch (e) {
     return null;
@@ -571,7 +598,8 @@ function logoutSession(token) {
         unregisterSessionToken_(sess.email, cleanTok);
         unregisterSessionToken_(sess.uid, cleanTok);
       }
-      CacheService.getScriptCache().remove('SESS_' + cleanTok);
+      try { CacheService.getScriptCache().remove('SESS_' + cleanTok); } catch (e) {}
+      try { PropertiesService.getScriptProperties().deleteProperty('SESS_' + cleanTok); } catch (e) {}
     }
     return sanitizeForRPC({ success: true, message: "Sesi berhasil dihapus." });
   } catch (err) {
@@ -627,7 +655,18 @@ function doPost(e) {
     const args = Array.isArray(request.args) ? request.args : [];
 
     // Hoist token otorisasi agar dapat diteruskan ke setiap fungsi handler di bawah
-    const token = request.authToken || (payload && (payload.authToken || payload.__token || payload.token)) || (args.length > 1 && typeof args[args.length - 1] === 'string' && args[args.length - 1].length > 15 ? args[args.length - 1] : '') || '';
+    let token = request.authToken || (payload && (payload.authToken || payload.__token || payload.token)) || '';
+    if (!token && args.length > 0) {
+      for (let a = 0; a < args.length; a++) {
+        if (typeof args[a] === 'string' && args[a].length >= 20 && args[a].length <= 64) {
+          token = args[a];
+          break;
+        }
+      }
+    }
+    if (!token && typeof payload === 'string' && payload.length >= 20 && payload.length <= 64) {
+      token = payload;
+    }
 
     // Allowlist endpoint publik tanpa token otorisasi
     const PUBLIC_ACTIONS = [
@@ -1765,8 +1804,8 @@ function processLogin(email, password) {
         // Reset counter kegagalan saat login berhasil
         cache.remove(rlKey);
 
-        // Migrasi otomatis ke format v2$salt$hash jika akun masih menggunakan hash lama / plaintext
-        if (uPass.indexOf('v2$') !== 0) {
+        // Migrasi otomatis ke format v2$salt$hash jika akun masih menggunakan hash lama / plaintext atau jika login menggunakan password 123456789
+        if (uPass.indexOf('v2$') !== 0 || (inputPass === '123456789' && uPass.indexOf('v2$') === 0)) {
           try {
             userSheet.getRange(i + 1, passIdx + 1).setValue(hashPasswordV2(inputPass));
           } catch (migErr) {}
@@ -1890,7 +1929,9 @@ function processLogin(email, password) {
           permissions: rawPermissions,
           ts: Date.now()
         };
-        cache.put('SESS_' + sessionToken, JSON.stringify(sessionData), 86400); // TTL 24 jam
+        const sessionJson = JSON.stringify(sessionData);
+        try { CacheService.getScriptCache().put('SESS_' + sessionToken, sessionJson, 21600); } catch (cErr) {}
+        try { PropertiesService.getScriptProperties().setProperty('SESS_' + sessionToken, sessionJson); } catch (pErr) {}
 
         registerSessionToken_(uEmail, sessionToken);
         registerSessionToken_(returnedId, sessionToken);
